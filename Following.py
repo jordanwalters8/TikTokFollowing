@@ -5,19 +5,20 @@ from tikapi import TikAPI, ValidationException, ResponseException
 from openpyxl import Workbook, load_workbook
 from datetime import datetime
 
-# Load TikAPI key from environment variable
-api_key = os.environ.get("TIKAPI_KEY")
-if not api_key:
-    raise ValueError("TIKAPI_KEY environment variable is not set")
-
-api = TikAPI(api_key)
-
-# File paths (relative to current directory)
+# File paths (relative)
 base_file = "shortlist_data.xlsx"
 
-# Function to fetch TikTok following list and save to Excel
+# Try to get TikAPI key (use placeholder if not set)
+api_key = os.environ.get("TIKAPI_KEY")
+can_scrape = bool(api_key)
+
+if not can_scrape:
+    print("⚠️  No TikAPI key set — skipping scraping step.")
+
+# Function to scrape following list and save to Excel
 def scrape_following_to_excel(excel_file):
     shortlist = []
+    api = TikAPI(api_key)
 
     try:
         response = api.public.followingList(
@@ -52,12 +53,13 @@ def scrape_following_to_excel(excel_file):
             print(f"Getting next items {next_cursor}")
             response = response.next_items()
 
-        print(shortlist)
+        print("Scraped usernames:", shortlist)
 
     except ValidationException as e:
         print("Validation error:", e, e.field)
     except ResponseException as e:
         print("API response error:", e, e.response.status_code)
+
 
 # Function to calculate follower growth stats
 def calculate_slopes_with_current_followers(input_file, output_file):
@@ -96,19 +98,23 @@ def calculate_slopes_with_current_followers(input_file, output_file):
 # Run if script is executed directly
 if __name__ == "__main__":
     today = datetime.today().strftime('%m.%d.%y')
-
     updated_file = f"shortlist_data_updated{today}.xlsx"
     slope_file = f"shortlist_data_slope{today}.xlsx"
 
-    scrape_following_to_excel(base_file)
+    if can_scrape:
+        scrape_following_to_excel(base_file)
+    else:
+        print("⏩ Skipping TikTok scrape — no API key.")
 
-    df = pd.read_excel(base_file)
-    df = df.sort_values(by=["Username", "Date"])
-    df['Daily Difference'] = df.groupby('Username')["Follower Count"].diff().fillna(0)
-    df.to_excel(updated_file, index=False)
+    if os.path.exists(base_file):
+        df = pd.read_excel(base_file)
+        df = df.sort_values(by=["Username", "Date"])
+        df['Daily Difference'] = df.groupby('Username')["Follower Count"].diff().fillna(0)
+        df.to_excel(updated_file, index=False)
+        calculate_slopes_with_current_followers(updated_file, slope_file)
+        print(f"✅ Updated data saved to {updated_file}")
+        print(f"📈 Slope analysis saved to {slope_file}")
+    else:
+        print("⚠️ No data file found — skipping analysis.")
 
-    calculate_slopes_with_current_followers(updated_file, slope_file)
-
-    print(f"Updated data saved to {updated_file}")
-    print(f"Slope analysis saved to {slope_file}")
-    print("Done.")
+    print("✅ Done.")
