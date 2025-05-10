@@ -1,37 +1,37 @@
 import os
 import pandas as pd
+from datetime import datetime
 from scipy.stats import linregress
 from tikapi import TikAPI, ValidationException, ResponseException
-from openpyxl import Workbook, load_workbook
-from datetime import datetime
+from google.cloud import bigquery
 
-# File paths (relative)
-base_file = "shortlist_data.xlsx"
+# 🔐 Authentication
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "bigquery-uploader-key.json"
 
-# Try to get TikAPI key (use placeholder if not set)
+def upload_to_bigquery(df, table_name):
+    project_id = "your-project-id"  # <-- REPLACE THIS with your actual GCP project ID
+    dataset_id = "tiktok_data"
+    table_id = f"{project_id}.{dataset_id}.{table_name}"
+
+    client = bigquery.Client()
+    job_config = bigquery.LoadJobConfig(autodetect=True)
+    job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
+    job.result()
+    print(f"✅ Uploaded {len(df)} rows to {table_id}")
+
+# 🗝️ Get TikAPI Key
 api_key = os.environ.get("TIKAPI_KEY")
 can_scrape = bool(api_key)
 
-if not can_scrape:
-    print("⚠️  No TikAPI key set — skipping scraping step.")
-
-# Function to scrape following list and save to Excel
-def scrape_following_to_excel(excel_file):
-    shortlist = []
+# 🧹 Scrape TikTok following list into DataFrame
+def scrape_following_df():
     api = TikAPI(api_key)
+    all_rows = []
 
     try:
         response = api.public.followingList(
             secUid="MS4wLjABAAAAboanSl94WMrjvJtHejLumdRGgy9oYuygOQfbC-iVne34BIfjcygpqSH84qsh2XcT"
         )
-
-        try:
-            workbook = load_workbook(excel_file)
-            sheet = workbook.active
-        except FileNotFoundError:
-            workbook = Workbook()
-            sheet = workbook.active
-            sheet.append(["Username", "Date", "Follower Count"])
 
         while response:
             data = response.json()
@@ -41,10 +41,11 @@ def scrape_following_to_excel(excel_file):
             for user_data in user_list:
                 username = user_data['user']['uniqueId']
                 follower_count = user_data['stats']['followerCount']
-                shortlist.append(username)
-                sheet.append([username, current_date, follower_count])
-
-            workbook.save(excel_file)
+                all_rows.append({
+                    "Username": username,
+                    "Date": current_date,
+                    "Follower Count": follower_count
+                })
 
             next_cursor = data.get("nextCursor")
             if not next_cursor:
@@ -53,34 +54,35 @@ def scrape_following_to_excel(excel_file):
             print(f"Getting next items {next_cursor}")
             response = response.next_items()
 
-        print("Scraped usernames:", shortlist)
+        return pd.DataFrame(all_rows)
 
     except ValidationException as e:
         print("Validation error:", e, e.field)
     except ResponseException as e:
         print("API response error:", e, e.response.status_code)
+    return pd.DataFrame()
 
+# 📈 Calculate Daily Difference, Percent Change, Slope, Avg %
+def calculate_slope_and_avg_pct(df):
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values(by=["Username", "Date"])
+    df['Daily Difference'] = df.groupby('Username')["Follower Count"].diff().fillna(0)
 
-# Function to calculate follower growth stats
-def calculate_slopes_with_current_followers(input_file, output_file):
-    excel_data = pd.ExcelFile(input_file)
-    sheet_name = excel_data.sheet_names[0]
-    data = excel_data.parse(sheet_name)
-
-    data['Date'] = pd.to_datetime(data['Date'])
-    data = data.sort_values(by=['Username', 'Date'])
-    data['Daily Difference'] = data.groupby('Username')['Follower Count'].diff().fillna(0)
+    df['Daily Percent Change'] = (
+        df.groupby('Username')["Follower Count"]
+        .pct_change()
+        .replace([float('inf'), float('-inf')], None)
+        .fillna(0) * 100
+    )
 
     results = []
-    for username, group in data.groupby('Username'):
+    for username, group in df.groupby('Username'):
         group = group.sort_values(by='Date')
         x = group['Date'].map(lambda date: date.toordinal())
         y = group['Follower Count']
 
         slope = linregress(x, y).slope if len(group) > 1 else None
-        pct_changes = group['Follower Count'].pct_change().dropna()
-        valid_pct_changes = pct_changes[~pct_changes.isin([float('inf'), float('-inf')])]
-        avg_pct_change = valid_pct_changes.mean() if not valid_pct_changes.empty else None
+        avg_pct_change = group['Daily Percent Change'].mean()
 
         results.append({
             'Username': username,
@@ -88,33 +90,22 @@ def calculate_slopes_with_current_followers(input_file, output_file):
             'Average Percent Change': avg_pct_change
         })
 
-    slope_data = pd.DataFrame(results)
+    return df, pd.DataFrame(results)
 
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        data.to_excel(writer, index=False, sheet_name=sheet_name)
-        slope_data.to_excel(writer, index=False, sheet_name='Slopes')
-
-
-# Run if script is executed directly
+# 🏁 Main Execution
 if __name__ == "__main__":
-    today = datetime.today().strftime('%m.%d.%y')
-    updated_file = f"shortlist_data_updated{today}.xlsx"
-    slope_file = f"shortlist_data_slope{today}.xlsx"
-
-    if can_scrape:
-        scrape_following_to_excel(base_file)
+    if not can_scrape:
+        print("⚠️ No TikAPI key set — skipping.")
     else:
-        print("⏩ Skipping TikTok scrape — no API key.")
+        df_raw = scrape_following_df()
 
-    if os.path.exists(base_file):
-        df = pd.read_excel(base_file)
-        df = df.sort_values(by=["Username", "Date"])
-        df['Daily Difference'] = df.groupby('Username')["Follower Count"].diff().fillna(0)
-        df.to_excel(updated_file, index=False)
-        calculate_slopes_with_current_followers(updated_file, slope_file)
-        print(f"✅ Updated data saved to {updated_file}")
-        print(f"📈 Slope analysis saved to {slope_file}")
-    else:
-        print("⚠️ No data file found — skipping analysis.")
+        if df_raw.empty:
+            print("⚠️ No data scraped.")
+        else:
+            df_with_diff, slope_df = calculate_slope_and_avg_pct(df_raw)
 
-    print("✅ Done.")
+            # Upload both raw data and summary stats
+            upload_to_bigquery(df_with_diff, table_name="followers")
+            upload_to_bigquery(slope_df, table_name="follower_slopes")
+
+            print("✅ Scrape + analysis + upload complete.")
