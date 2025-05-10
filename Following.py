@@ -6,7 +6,7 @@ from tikapi import TikAPI, ValidationException, ResponseException
 from google.cloud import bigquery
 
 # 🔐 Authentication
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "bigquery-uploader-key.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "tiktokanalyticskey.json"
 
 def upload_to_bigquery(df, table_name):
     project_id = "tiktokanalytics-459417"
