@@ -109,3 +109,15 @@ if __name__ == "__main__":
             upload_to_bigquery(slope_df, table_name="follower_slopes")
 
             print("✅ Scrape + analysis + upload complete.")
+
+# TEST ONLY: Dummy data to check BigQuery upload
+test_df = pd.DataFrame({
+    "Username": ["@testuser1", "@testuser2"],
+    "Date": [datetime.today().date(), datetime.today().date()],
+    "Follower Count": [10000, 12000],
+    "Daily Difference": [150, 300],
+    "Daily Percent Change": [1.5, 2.6]
+})
+
+upload_to_bigquery(test_df, table_name="followers_test")
+
