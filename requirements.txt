@@ -1,4 +1,5 @@
+tikapi
+google-cloud-bigquery
 pandas
 scipy
-tikapi
 openpyxl
