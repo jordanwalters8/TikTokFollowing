@@ -9,7 +9,7 @@ from google.cloud import bigquery
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "bigquery-uploader-key.json"
 
 def upload_to_bigquery(df, table_name):
-    project_id = "your-project-id"  # <-- REPLACE THIS with your actual GCP project ID
+    project_id = "tiktokanalytics-459417"
     dataset_id = "tiktok_data"
     table_id = f"{project_id}.{dataset_id}.{table_name}"
 
