@@ -25,5 +25,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Decode BigQuery credentials
+        run: echo "${{ secrets.BIGQUERY_KEY }}" | base64 -d > tiktokanalyticskey.json
+
+
       - name: Run Following script
         run: python Following.py
