@@ -8,6 +8,15 @@ from google.cloud import bigquery
 # 🔐 Authentication
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "tiktokanalyticskey.json"
 
+# 📌 List of Sony Music Nashville usernames
+SONY_SIGNED_USERS = {
+    "alanaspringsteen", "tigirlilygold", "mccoymooremusic", "bradtursi", "brooksanddunn",
+    "coreykent", "davidjcountry", "dylanmarlowemusic", "gavindegraw", "grahambarham",
+    "kameronmarlowe", "kanebrown", "karleyscottcollins", "katlunamusic", "kayleygreenmusic",
+    "lukecombs", "meganmoroney", "m10penny", "morganwademusic", "natesmithmusic",
+    "olddominionband", "vavomusic", "zachjohnking"
+}
+
 def upload_to_bigquery(df, table_name):
     project_id = "tiktokanalytics-459417"
     dataset_id = "tiktok_data"
@@ -41,10 +50,12 @@ def scrape_following_df():
             for user_data in user_list:
                 username = user_data['user']['uniqueId']
                 follower_count = user_data['stats']['followerCount']
+                is_sony = int(username.lower() in SONY_SIGNED_USERS)
                 all_rows.append({
                     "Username": username,
                     "Date": current_date,
-                    "Follower Count": follower_count
+                    "Follower Count": follower_count,
+                    "Sony Signed": is_sony
                 })
 
             next_cursor = data.get("nextCursor")
@@ -83,11 +94,13 @@ def calculate_slope_and_avg_pct(df):
 
         slope = linregress(x, y).slope if len(group) > 1 else None
         avg_pct_change = group['Daily Percent Change'].mean()
+        is_sony = int(username.lower() in SONY_SIGNED_USERS)
 
         results.append({
             'Username': username,
             'Slope': slope,
-            'Average Percent Change': avg_pct_change
+            'Average Percent Change': avg_pct_change,
+            'Sony Signed': is_sony
         })
 
     return df, pd.DataFrame(results)
@@ -116,8 +129,8 @@ test_df = pd.DataFrame({
     "Date": [datetime.today().date(), datetime.today().date()],
     "Follower Count": [10000, 12000],
     "Daily Difference": [150, 300],
-    "Daily Percent Change": [1.5, 2.6]
+    "Daily Percent Change": [1.5, 2.6],
+    "Sony Signed": [0, 1]
 })
 
 upload_to_bigquery(test_df, table_name="followers_test")
-
